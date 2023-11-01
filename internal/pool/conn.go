@@ -71,7 +71,21 @@ func (cn *Conn) WithReader(
 			return err
 		}
 	}
-	return fn(cn.rd)
+
+	done := make(chan struct{})
+	stop := context.AfterFunc(ctx, func() {
+		cn.netConn.SetReadDeadline(time.Now())
+		close(done)
+	})
+
+	err := fn(cn.rd)
+
+	if !stop() {
+		<-done
+		cn.netConn.SetReadDeadline(time.Time{})
+		return ctx.Err()
+	}
+	return err
 }
 
 func (cn *Conn) WithWriter(
@@ -87,7 +101,21 @@ func (cn *Conn) WithWriter(
 		cn.bw.Reset(cn.netConn)
 	}
 
-	if err := fn(cn.wr); err != nil {
+	done := make(chan struct{})
+	stop := context.AfterFunc(ctx, func() {
+		cn.netConn.SetWriteDeadline(time.Now())
+		close(done)
+	})
+
+	err := fn(cn.wr)
+
+	if !stop() {
+		<-done
+		cn.netConn.SetWriteDeadline(time.Time{})
+		return ctx.Err()
+	}
+
+	if err != nil {
 		return err
 	}
 
